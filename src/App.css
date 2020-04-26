@@ -5,10 +5,10 @@
 .App-main {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  /*align-items: center;*/
   justify-content: center;
   font-size: 1.2em;
-  margin: 1em;
+  margin: 0 1em;
 }
 
 .App-main input {
@@ -26,12 +26,6 @@
   width: 50px;
 }
 .video-container {
-  /*display:block;*/
-  /*margin-left:auto;*/
-  /*margin-right:auto;*/
-  /*width:100%;*/
-  /*min-height: 315px;*/
-  /*max-width: 560px;*/
   position: relative;
   padding-bottom: 56.25%;
   padding-top: 30px; height: 0; overflow: hidden;
@@ -46,6 +40,19 @@
   height: 100%;
 }
 
+.sequenceDisplay {
+  font-family: monospace;
+  font-size: 1.3em;
+  text-align: center;
+  overflow: scroll;
+  overflow-y:hidden;
+  white-space: nowrap;
+
+}
+
+.sequenceDisplayPresent {
+  background-color: #9ddae9;
+}
 
 h1, h2 {
   color: #6daab9;

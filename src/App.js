@@ -6,7 +6,7 @@ import { DebruijnPlayerInformation } from "./debruijn_player/DebruijnPlayerInfor
 function App() {
   return (
     <div className="App">
-      <div className="App-main">
+      <div>
         <DebruijnPlayer />
         <DebruijnPlayerInformation />
       </div>

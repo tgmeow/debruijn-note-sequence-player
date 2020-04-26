@@ -1,9 +1,11 @@
 import React from "react";
 import { Mutex } from "async-mutex";
 import * as Tone from "tone";
-import { DebruijnGenerator } from "./debruijnGenerator";
+import { BufferedDebruijnGenerator } from "./debruijn_generator";
 import { PlayerConfigs } from "./playerConfigs";
-import { PlayNote } from "./toneHelper";
+import { ToneNotePlayer } from "./toneHelper";
+import { sleep, shuffle, isValidNonNegInt } from "./js_utils";
+import RingBuffer from "./ring_buffer";
 
 const NoteOffset = (props) => (
   <label>
@@ -27,15 +29,26 @@ export default class DebruijnPlayer extends React.Component {
     super(props);
 
     this.state = {
+      sequenceDisplay: {
+        past: [],
+        present: [],
+        future: [],
+      },
       isPlaying: false,
       isPaused: false,
-      playerStateText: "",
+      playerStateText: "Stopped",
       ...PlayerConfigs.DEFAULT,
     };
+
+    this.BUFFER_PEEK_SIZE = 12;
+    this.sequencePast = new RingBuffer(this.BUFFER_PEEK_SIZE, true);
+    this.sequencePresent = new RingBuffer(1, true);
 
     this.ALPHABET_SIZE_MAX = 500;
     this.WORD_LENGTH_MAX = 500;
     this.NOTE_DELAY_MIN = 20;
+    this.BUFFER_DELAY = 10; // Buffer delay should always be < note delay, otherwise buffer is starved.
+    this.BUFFER_SIZE = 100;
 
     this.pauseMutex = new Mutex();
     this.mutexReleaser = null;
@@ -72,6 +85,7 @@ export default class DebruijnPlayer extends React.Component {
     if (url.searchParams.has(paramString)) {
       let value = parseInt(url.searchParams.get(paramString), 10);
       if (validatorFunc(value)) {
+        // eslint-disable-next-line
         this.state[paramString] = value;
         return true;
       }
@@ -92,6 +106,7 @@ export default class DebruijnPlayer extends React.Component {
     );
     if (updatedAlphabetSize) {
       let alphabetSize = this.state.alphabetSize;
+      // eslint-disable-next-line
       this.state.alphabetOffset = [...Array(alphabetSize).keys()]; // Use this array by default.
 
       // Only try to parse the alphabetOffset Array if we successfully set the alphabetSize.
@@ -106,6 +121,7 @@ export default class DebruijnPlayer extends React.Component {
 
         // Set to the parsed array if the lengths match and all values are valid integers.
         if (alphabetOffset.length === alphabetSize && validArr) {
+          // eslint-disable-next-line
           this.state.alphabetOffset = alphabetOffset;
         }
       }
@@ -147,22 +163,43 @@ export default class DebruijnPlayer extends React.Component {
       this.setState({ isPlaying: false, playerStateText: "Stopped" });
     } else {
       console.log("Starting sequence...");
+      this.sequencePast.clearBuffer();
+      this.sequencePresent.clearBuffer();
       this.unpausePlayer();
       this.setState({ isPlaying: true });
       await Tone.start();
-      let gen = DebruijnGenerator(
+      let notePlayer = new ToneNotePlayer(15);
+      let bufferedDebruijnGenerator = new BufferedDebruijnGenerator(
         this.state.alphabetSize,
-        this.state.wordLength
+        this.state.wordLength,
+        this.BUFFER_SIZE,
+        this.BUFFER_DELAY
       );
-      let result = gen.next();
+      let generator = bufferedDebruijnGenerator.getGenerator();
+      let result = await generator.next();
       while (!result.done) {
+        console.log("VAL!");
+        let rawNoteNum = result.value;
         let noteNum =
-          this.state.alphabetOffset[result.value] + this.state.midiOrigin;
-        if (Number.isInteger(noteNum)) {
-          // Workaround for when the array size decreases during playback.
-          PlayNote(noteNum);
+          this.state.alphabetOffset[rawNoteNum] + this.state.midiOrigin;
+        if (!this.sequencePresent.isEmpty()) {
+          this.sequencePast.push(this.sequencePresent.peek(1)[0]);
         }
-        result = gen.next();
+        this.sequencePresent.push(rawNoteNum);
+
+        this.setState({
+          sequenceDisplay: {
+            past: this.sequencePast.peek(this.BUFFER_PEEK_SIZE),
+            present: this.sequencePresent.peek(1),
+            future: bufferedDebruijnGenerator.peek(this.BUFFER_PEEK_SIZE),
+          },
+        });
+
+        // Workaround for when the array size decreases during playback.
+        if (Number.isInteger(noteNum) && this.state.isPlaying) {
+          notePlayer.playNote(noteNum);
+        }
+        result = await generator.next();
         if (!this.state.isPlaying) {
           break;
         }
@@ -274,7 +311,7 @@ export default class DebruijnPlayer extends React.Component {
             valueFromState={currOffsetVal}
             updateOffset={this.updateOffset}
           />{" "}
-          {Tone.Frequency(
+          {new Tone.Frequency(
             this.state.midiOrigin + currOffsetVal,
             "midi"
           ).toNote()}
@@ -283,7 +320,7 @@ export default class DebruijnPlayer extends React.Component {
       );
     }
     return (
-      <div>
+      <div className={"App-main"}>
         <h1>De Bruijn Sequence Player</h1>
         <div>
           Try one of these preconfigured settings!
@@ -313,83 +350,84 @@ export default class DebruijnPlayer extends React.Component {
           </button>
         </div>
         <br />
-        <label>Note Delay: </label>
-        <input
-          type={"number"}
-          min={this.NOTE_DELAY_MIN}
-          placeholder={"time in ms (default 300)"}
-          value={this.state.noteDelay}
-          onChange={(event) =>
-            this.updateNoteDelay(parseInt(event.target.value, 10))
-          }
-        />
-        (ms)
-        <br />
-        <label>Alphabet Size: </label>
-        <input
-          type={"number"}
-          min={"0"}
-          max={this.ALPHABET_SIZE_MAX}
-          placeholder={"size (default 3)"}
-          value={this.state.alphabetSize}
-          onChange={(event) =>
-            this.updateAlphabetSize(parseInt(event.target.value, 10))
-          }
-        />
-        <br />
-        <label>Word Length: </label>
-        <input
-          type={"number"}
-          min={"0"}
-          max={this.WORD_LENGTH_MAX}
-          placeholder={"length (default 3)"}
-          value={this.state.wordLength}
-          onChange={(event) =>
-            this.updateWordLength(parseInt(event.target.value, 10))
-          }
-        />
-        <br />
-        <label>Midi Origin: </label>
-        <input
-          type={"number"}
-          placeholder={"origin (default 60)"}
-          value={this.state.midiOrigin}
-          onChange={(event) =>
-            this.updateMidiOrigin(parseInt(event.target.value, 10))
-          }
-        />{" "}
-        {Tone.Frequency(this.state.midiOrigin, "midi").toNote()}
-        <br />
+        <div>
+          <label>
+            Note Delay:{" "}
+            <input
+              type={"number"}
+              min={this.NOTE_DELAY_MIN}
+              placeholder={"time in ms (default 300)"}
+              value={this.state.noteDelay}
+              onChange={(event) =>
+                this.updateNoteDelay(parseInt(event.target.value, 10))
+              }
+            />
+          </label>
+          (ms)
+        </div>
+        <div>
+          <label>
+            Alphabet Size:{" "}
+            <input
+              type={"number"}
+              min={"0"}
+              max={this.ALPHABET_SIZE_MAX}
+              placeholder={"size (default 3)"}
+              value={this.state.alphabetSize}
+              onChange={(event) =>
+                this.updateAlphabetSize(parseInt(event.target.value, 10))
+              }
+            />
+          </label>
+        </div>
+        <div>
+          <label>
+            Word Length:{" "}
+            <input
+              type={"number"}
+              min={"0"}
+              max={this.WORD_LENGTH_MAX}
+              placeholder={"length (default 3)"}
+              value={this.state.wordLength}
+              onChange={(event) =>
+                this.updateWordLength(parseInt(event.target.value, 10))
+              }
+            />
+          </label>
+        </div>
+        <div>
+          <label>
+            Midi Origin:{" "}
+            <input
+              type={"number"}
+              placeholder={"origin (default 60)"}
+              value={this.state.midiOrigin}
+              onChange={(event) =>
+                this.updateMidiOrigin(parseInt(event.target.value, 10))
+              }
+            />
+          </label>{" "}
+          {new Tone.Frequency(this.state.midiOrigin, "midi").toNote()}
+        </div>
         {NoteOffsetList}
-        <button onClick={this.startStopPlayer}>Start/Stop</button>
-        <button onClick={this.pauseContinuePlayer}>Pause/Continue</button>
-        <span> {this.state.playerStateText}</span>
         <br />
+        <span>Player Status: {this.state.playerStateText}</span>
+        <div>
+          <button onClick={this.startStopPlayer}>Start/Stop</button>
+          <button onClick={this.pauseContinuePlayer}>Pause/Continue</button>
+        </div>
+        Scrolling sequence snapshot:{" "}
+        <div className={"sequenceDisplay"}>
+          <span>{this.state.sequenceDisplay.past.join(" ")} </span>
+          <span className={"sequenceDisplayPresent"}>
+            {this.state.sequenceDisplay.present.join(" ")}
+          </span>
+          <span> {this.state.sequenceDisplay.future.join(" ")}</span>
+        </div>
       </div>
     );
   }
 }
-
-/**
- * Source: https://stackoverflow.com/questions/6274339/how-can-i-shuffle-an-array
- * Shuffles array in place. ES6 version
- * @param {Array} a items An array containing the items.
- */
-let shuffle = (a) => {
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-};
-
-let isValidNonNegInt = (number) => {
-  return Number.isInteger(number) && number >= 0;
-};
-
-let sleep = (ms) => {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-};
 
 // To be called alongside setState when necessary so that the state will also be saved in URL parameters.
 let setURLState = (key, value) => {

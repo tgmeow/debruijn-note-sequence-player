@@ -15,12 +15,12 @@ const Configs = {
   MAJOR_C4: {
     ...SharedConfigs.BASE_DEFAULTS,
     ...SharedConfigs.ALPHABET_SCALE_1OCTV,
-    alphabetOffset: [0, 2, 3, 5, 7, 8, 10, 12],
+    alphabetOffset: [0, 2, 4, 5, 7, 9, 11, 12],
   },
   MINOR_C4: {
     ...SharedConfigs.BASE_DEFAULTS,
     ...SharedConfigs.ALPHABET_SCALE_1OCTV,
-    alphabetOffset: [0, 2, 4, 5, 7, 9, 11, 12],
+    alphabetOffset: [0, 2, 3, 5, 7, 8, 10, 12],
   },
   MAJOR_D3_O2: {
     ...SharedConfigs.BASE_DEFAULTS,

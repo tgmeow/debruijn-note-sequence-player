@@ -1,7 +1,7 @@
 import React from "react";
 
 export const DebruijnPlayerInformation = () => (
-  <div>
+  <div className={"App-main"}>
     <h2>Instructions</h2>
     <p>
       The{" "}
@@ -10,7 +10,7 @@ export const DebruijnPlayerInformation = () => (
         target={"_blank"}
         rel={"noopener noreferrer"}
       >
-        DeBruijn Sequence
+        De Bruijn Sequence
       </a>{" "}
       contains every possible length "wordLength" string over an alphabet of
       size "alphabetSize" exactly once as a substring (with the last word
@@ -48,19 +48,21 @@ export const DebruijnPlayerInformation = () => (
 
     <p>
       This site will use numbers as the generated output. Each output gets
-      mapped to its Alphabet # Offset and is interpreted as a MIDI value.
+      mapped to its Alphabet # Offset and is interpreted as a MIDI value. In
+      MIDI, "60" is C4, or middle C. Each integer up or down is the
+      next/previous note.
     </p>
     <p>
-      The config state gets saved to the URL so that you can easily share fun
+      The config state gets saved to the URL so that you can easily share
       configs with others!
     </p>
     <p>
       <b>Midi Origin</b> sets the origin for the offset of zero.
       <br />
       <b>Alphabet # Offset</b> sets the note for that alphabet relative to the
-      Midi Origin.
+      Midi Origin. You can edit the configs while it is still playing.
     </p>
-    <h3>Credits</h3>
+    <h2>Credits</h2>
     <p>
       Author: Tiger Mou
       <br />
