@@ -90,14 +90,14 @@ export class BufferedDebruijnGenerator {
         if (this._buffer.isFull() || fullMutex.isLocked()) {
           // When full, wait for the "unlock" to continue
           (await fullMutex.acquire())();
-        } else {
-          this._buffer.push(result.value);
-          if (emptyMutexUnlocker !== undefined) {
-            emptyMutexUnlocker = emptyMutexUnlocker();
-          }
-          if (this._buffer.isFull()) {
-            fullMutexUnlocker = await fullMutex.acquire();
-          }
+        }
+
+        this._buffer.push(result.value);
+        if (emptyMutexUnlocker !== undefined) {
+          emptyMutexUnlocker = emptyMutexUnlocker();
+        }
+        if (this._buffer.isFull()) {
+          fullMutexUnlocker = await fullMutex.acquire();
         }
         result = await generator.next();
         await sleep(this._bufferDelay);

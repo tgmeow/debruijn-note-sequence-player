@@ -6,6 +6,8 @@ import { PlayerConfigs } from "./playerConfigs";
 import { ToneNotePlayer } from "./toneHelper";
 import { sleep, shuffle, isValidNonNegInt } from "./js_utils";
 import RingBuffer from "./ring_buffer";
+import * as moment from "moment";
+import "moment-precise-range-plugin";
 
 const NoteOffset = (props) => (
   <label>
@@ -34,6 +36,8 @@ export default class DebruijnPlayer extends React.Component {
         present: [],
         future: [],
       },
+      playedCount: 0,
+      totalLength: undefined,
       isPlaying: false,
       isPaused: false,
       playerStateText: "Stopped",
@@ -43,6 +47,7 @@ export default class DebruijnPlayer extends React.Component {
     this.BUFFER_PEEK_SIZE = 12;
     this.sequencePast = new RingBuffer(this.BUFFER_PEEK_SIZE, true);
     this.sequencePresent = new RingBuffer(1, true);
+    this.playedCount = 0;
 
     this.ALPHABET_SIZE_MAX = 500;
     this.WORD_LENGTH_MAX = 500;
@@ -76,7 +81,6 @@ export default class DebruijnPlayer extends React.Component {
     this.constructorProcessURLParams = this.constructorProcessURLParams.bind(
       this
     );
-
     // Read state from URL at the end of construction
     this.constructorProcessURLParams();
   }
@@ -126,12 +130,24 @@ export default class DebruijnPlayer extends React.Component {
         }
       }
     }
+    // eslint-disable-next-line
+    this.state.totalLength = calculateTotalSequenceLength(
+      this.state.alphabetSize,
+      this.state.wordLength
+    );
+
     // update URL to match whatever was successfully parsed
     setStateToPlayerConfig(this.state);
   }
 
   setStateAndURL(state) {
     this.setState(state);
+    this.setState({
+      totalLength: calculateTotalSequenceLength(
+        state.alphabetSize ? state.alphabetSize : this.state.alphabetSize,
+        state.wordLength ? state.wordLength : this.state.wordLength
+      ),
+    });
     setStateToPlayerConfig(state);
   }
 
@@ -158,15 +174,23 @@ export default class DebruijnPlayer extends React.Component {
 
   async startStopPlayer() {
     if (this.state.isPlaying) {
-      console.log("Stopping sequence...");
+      // console.log("Stopping sequence...");
       this.unpausePlayer();
       this.setState({ isPlaying: false, playerStateText: "Stopped" });
     } else {
-      console.log("Starting sequence...");
+      // console.log("Starting sequence...");
       this.sequencePast.clearBuffer();
       this.sequencePresent.clearBuffer();
       this.unpausePlayer();
-      this.setState({ isPlaying: true });
+      this.setState({
+        isPlaying: true,
+        totalLength: calculateTotalSequenceLength(
+          this.state.alphabetSize,
+          this.state.wordLength
+        ),
+        playeCount: 0,
+      });
+      this.playedCount = 0;
       await Tone.start();
       let notePlayer = new ToneNotePlayer(15);
       let bufferedDebruijnGenerator = new BufferedDebruijnGenerator(
@@ -177,8 +201,8 @@ export default class DebruijnPlayer extends React.Component {
       );
       let generator = bufferedDebruijnGenerator.getGenerator();
       let result = await generator.next();
+
       while (!result.done) {
-        console.log("VAL!");
         let rawNoteNum = result.value;
         let noteNum =
           this.state.alphabetOffset[rawNoteNum] + this.state.midiOrigin;
@@ -186,6 +210,7 @@ export default class DebruijnPlayer extends React.Component {
           this.sequencePast.push(this.sequencePresent.peek(1)[0]);
         }
         this.sequencePresent.push(rawNoteNum);
+        ++this.playedCount;
 
         this.setState({
           sequenceDisplay: {
@@ -193,6 +218,7 @@ export default class DebruijnPlayer extends React.Component {
             present: this.sequencePresent.peek(1),
             future: bufferedDebruijnGenerator.peek(this.BUFFER_PEEK_SIZE),
           },
+          playedCount: this.playedCount,
         });
 
         // Workaround for when the array size decreases during playback.
@@ -205,7 +231,7 @@ export default class DebruijnPlayer extends React.Component {
         }
         if (this.state.isPaused) {
           (await this.pauseMutex.acquire())(); // Release the acquired mutex immediately once acquired.
-          console.log("Pause was resolved!");
+          // console.log("Pause was resolved!");
           if (!this.state.isPlaying) {
             // check for stop state after continue
             break;
@@ -215,7 +241,7 @@ export default class DebruijnPlayer extends React.Component {
           await sleep(this.state.noteDelay);
         }
       }
-      console.log("Done playing sequence!");
+      // console.log("Done playing sequence!");
       this.unpausePlayer();
       this.setState({ isPlaying: false, playerStateText: "Stopped" });
     }
@@ -227,16 +253,16 @@ export default class DebruijnPlayer extends React.Component {
     }
 
     if (this.state.isPaused) {
-      console.log("Continuing sequence...");
+      // console.log("Continuing sequence...");
       this.unpausePlayer();
     } else {
-      console.log("Pausing sequence...");
+      // console.log("Pausing sequence...");
       this.mutexReleaser = await this.pauseMutex.acquire();
       this.setState({
         isPaused: true,
         playerStateText: "Paused",
       });
-      console.log("Sequence paused!");
+      // console.log("Sequence paused!");
     }
   }
 
@@ -266,7 +292,14 @@ export default class DebruijnPlayer extends React.Component {
           return index;
         }
       );
-      this.setStateAndURL({ alphabetSize, alphabetOffset });
+      this.setStateAndURL({
+        alphabetSize,
+        alphabetOffset,
+        totalLength: calculateTotalSequenceLength(
+          alphabetSize,
+          this.state.wordLength
+        ),
+      });
     }
   }
 
@@ -276,7 +309,13 @@ export default class DebruijnPlayer extends React.Component {
 
   updateWordLength(wordLength) {
     if (this.canUpdateWordLength(wordLength)) {
-      this.setStateAndURL({ wordLength });
+      this.setStateAndURL({
+        wordLength,
+        totalLength: calculateTotalSequenceLength(
+          this.state.alphabetSize,
+          wordLength
+        ),
+      });
     }
   }
 
@@ -411,7 +450,16 @@ export default class DebruijnPlayer extends React.Component {
         </div>
         {NoteOffsetList}
         <br />
-        <span>Player Status: {this.state.playerStateText}</span>
+        <span>{`Player Status: ${this.state.playerStateText} ${(
+          (100 * this.state.playedCount) /
+          this.state.totalLength
+        ).toFixed(2)}% (${this.state.playedCount}/${
+          this.state.totalLength
+        })`}</span>
+        <span>{`Theoretical Time Remaining: ${getHumanReadableTime(
+          (this.state.totalLength - this.state.playedCount) *
+            this.state.noteDelay
+        )}`}</span>
         <div>
           <button onClick={this.startStopPlayer}>Start/Stop</button>
           <button onClick={this.pauseContinuePlayer}>Pause/Continue</button>
@@ -447,4 +495,15 @@ let setStateToPlayerConfig = (config) => {
   setURLState("alphabetSize", config?.alphabetSize);
   setURLState("wordLength", config?.wordLength);
   setURLState("alphabetOffset", config?.alphabetOffset);
+};
+
+let calculateTotalSequenceLength = (alphabetSize, wordLength) => {
+  return Math.pow(alphabetSize, wordLength) + wordLength - 1;
+};
+
+let getHumanReadableTime = (milliseconds) => {
+  if (milliseconds < 1000) {
+    return "0 seconds";
+  }
+  return moment.preciseDiff(0, milliseconds);
 };

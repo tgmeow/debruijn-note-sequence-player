@@ -44,7 +44,7 @@
   font-family: monospace;
   font-size: 1.3em;
   text-align: center;
-  overflow: scroll;
+  overflow: auto;
   overflow-y:hidden;
   white-space: nowrap;
 
